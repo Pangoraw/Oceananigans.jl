@@ -69,7 +69,9 @@ AdaptiveVerticallyImplicitDiscretization:
 """
 function AdaptiveVerticallyImplicitDiscretization(FT::DataType = Oceananigans.defaults.FloatType; cfl = 0.5)
     cfl = convert(FT, cfl)
-    Δt  = Ref(zero(FT))
+    # `Ref{Any}` (rather than `Ref{FT}`) so `update_advection_timestep!` can store a
+    # `Reactant.TracedRNumber` into it while tracing, not just a concrete `FT`.
+    Δt  = Ref{Any}(zero(FT))
     return AdaptiveVerticallyImplicitDiscretization(cfl, Δt)
 end
 
