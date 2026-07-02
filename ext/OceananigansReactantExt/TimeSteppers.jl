@@ -23,6 +23,9 @@ import Oceananigans.TimeSteppers: Clock, first_time_step!, time_step!,
                                   ab2_step!, maybe_prepare_first_time_step!,
                                   materialize_clock!, convert_time
 import Oceananigans: initialize!
+import Oceananigans.Advection: materialize_advection
+
+using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization
 
 const ReactantModel{TS} = Union{
     AbstractModel{TS, <:ReactantState},
@@ -46,6 +49,19 @@ function Clock(grid::ReactantGrid)
     last_stage_Δt = ConcreteRNumber(Inf, sharding=sharding)
 
     return Clock(; time=t, iteration=iter, stage, last_Δt, last_stage_Δt, kernel_time_type=FT)
+end
+
+# `update_advection_timestep!` stores `clock.last_Δt` into `td.Δt[]`. Under Reactant
+# tracing, `clock.last_Δt` is a `TracedRNumber`, which a `Ref{Float64}` cannot hold — but
+# Reactant's tracer *does* know how to promote a `Ref` whose contents are already a
+# `ConcreteRNumber` into a `Ref{TracedRNumber}` when the object enters a trace. So we
+# re-seed `Δt` with a `ConcreteRNumber` here, once, when the scheme is attached to a
+# Reactant grid, rather than paying for `Ref{Any}` boxing on every timestep.
+function materialize_advection(td::AdaptiveVerticallyImplicitDiscretization, grid::ReactantGrid)
+    arch = architecture(grid)
+    sharding = arch isa Distributed ? Sharding.Replicated(arch.connectivity) : Sharding.NoSharding()
+    Δt = ConcreteRNumber(td.Δt[]; sharding)
+    return AdaptiveVerticallyImplicitDiscretization(td.cfl, Ref(Δt))
 end
 
 # Extend `Oceananigans.TimeSteppers.clock_convert` not to commit type piracy on
