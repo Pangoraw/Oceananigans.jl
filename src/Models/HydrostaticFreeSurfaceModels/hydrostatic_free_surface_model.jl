@@ -284,7 +284,7 @@ function HydrostaticFreeSurfaceModel(grid;
     # are consistent between materialization and tendency computation.
     model_fields = merge(hydrostatic_fields(velocities, free_surface, tracers), auxiliary_fields)
     forcing = model_forcing(forcing, model_fields, prognostic_fields)
-    transport_velocities = transport_velocity_fields(velocities)
+    transport_velocities = transport_velocity_fields(velocities, free_surface)
 
     !isnothing(particles) && arch isa Distributed && error("LagrangianParticles are not supported on Distributed architectures.")
 
@@ -301,9 +301,16 @@ function HydrostaticFreeSurfaceModel(grid;
     return model
 end
 
-transport_velocity_fields(velocities) = (u = copy_velocity(velocities.u),
-                                         v = copy_velocity(velocities.v),
-                                         w = copy_velocity(velocities.w))
+transport_velocity_fields(velocities, free_surface) = (u = copy_velocity(velocities.u),
+                                                       v = copy_velocity(velocities.v),
+                                                       w = copy_velocity(velocities.w))
+
+# `SplitExplicitFreeSurface` has no `compute_transport_velocities!` override, so it always
+# falls back to `update_transport_velocities!`, which just copies `velocities` into
+# `transport_velocities` every stage (see below). The two are therefore never physically
+# distinct for this free surface, so alias them instead of carrying a redundant full copy
+# of `u`, `v`, `w` (`update_transport_velocities!` already no-ops when they're `===`).
+transport_velocity_fields(velocities, ::SplitExplicitFreeSurface) = velocities
 
 copy_velocity(u::Field{<:Face, <:Center, <:Center}) = XFaceField(u.grid; boundary_conditions=u.boundary_conditions)
 copy_velocity(v::Field{<:Center, <:Face, <:Center}) = YFaceField(v.grid; boundary_conditions=v.boundary_conditions)
